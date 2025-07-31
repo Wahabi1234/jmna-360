@@ -426,3 +426,32 @@ h1 {
         flex: 1;
     }
 }
+/* Add to your existing CSS */
+
+/* Sync status indicator */
+#syncStatus {
+    margin-left: 10px;
+    font-size: 0.9em;
+    color: #28a745;
+    font-weight: bold;
+}
+
+/* Firebase connection status */
+.firebase-connected {
+    color: #28a745;
+}
+
+.firebase-disconnected {
+    color: #dc3545;
+}
+
+/* Sync animation */
+@keyframes sync-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.syncing {
+    display: inline-block;
+    animation: sync-spin 2s infinite linear;
+}
