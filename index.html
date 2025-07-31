@@ -14,60 +14,17 @@
             <div id="statusMessage" class="status-message">System ready</div>
             <div>
                 <span id="lastSaved"></span>
+                <span id="syncStatus"></span>
             </div>
         </div>
         
-        <button class="toggle-settings" onclick="toggleSettings()">⚙️ Settings</button>
+        <!-- Rest of your HTML remains the same -->
         
-        <div id="settingsPanel" class="settings-panel hidden">
-            <h3>⚙️ System Configuration</h3>
-            
-            <div class="settings-row">
-                <label>Users:</label>
-                <div class="user-management">
-                    <div id="usersList"></div>
-                    <input type="text" id="newUserInput" placeholder="Add new user" maxlength="20">
-                    <button onclick="addUser()">Add User</button>
-                </div>
-            </div>
-            
-            <div class="settings-row">
-                <label>Week Start:</label>
-                <select id="weekStartDay" onchange="saveSettings()">
-                    <option value="0">Sunday</option>
-                    <option value="1" selected>Monday</option>
-                    <option value="2">Tuesday</option>
-                    <option value="3">Wednesday</option>
-                    <option value="4">Thursday</option>
-                    <option value="5">Friday</option>
-                    <option value="6">Saturday</option>
-                </select>
-            </div>
-            
-            <div class="settings-row">
-                <button onclick="exportData()">📤 Export Data</button>
-                <button onclick="importData()">📥 Import Data</button>
-                <input type="file" id="importFile" accept=".json" style="display: none;" onchange="handleImport(event)">
-                <button onclick="clearAllData()" style="background-color: #dc3545;">🗑️ Clear All Data</button>
-            </div>
-        </div>
+        <!-- Add Firebase SDK -->
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
         
-        <div class="date-navigation">
-            <button onclick="changeWeek(-1)">← Previous Week</button>
-            <input type="date" id="currentDate" onchange="goToDate()">
-            <button onclick="goToToday()">Today</button>
-            <button onclick="changeWeek(1)">Next Week →</button>
-        </div>
-        
-        <div class="legend" id="legend">
-            <!-- Legend will be populated by JavaScript -->
-        </div>
-        
-        <div id="weekContainer" class="week-container">
-            <!-- Week content will be populated by JavaScript -->
-        </div>
+        <script src="script.js"></script>
     </div>
-
-    <script src="script.js"></script>
 </body>
 </html>
