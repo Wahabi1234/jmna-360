@@ -1,3 +1,18 @@
+// Firebase configuration - Replace with YOUR Firebase config
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
 // Default settings
 let settings = {
     users: ['ABDO', 'MOUAD'],
@@ -8,6 +23,8 @@ let settings = {
 // Data storage
 let references = {};
 let currentDate = new Date();
+let isInitialLoad = true;
+let lastSyncTime = null;
 
 // Day names
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -18,18 +35,11 @@ const colorPalette = [
     '#d1ecf1', '#ffeaa7', '#fab1a0', '#a29bfe', '#fd79a8'
 ];
 
-// File name for data storage
-const DATA_FILE_NAME = 'reference-tracking-data.json';
-
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    loadSettings();
-    loadData();
+    updateStatus('Initializing system...');
+    setupFirebaseSync();
     updateCurrentDate();
-    displayWeek();
-    displayUsers();
-    updateLegend();
-    setupAutoSave();
     addWeekStatsButton();
 });
 
@@ -53,39 +63,150 @@ function updateStatus(message, isError = false) {
 }
 
 function updateLastSaved() {
+    const now = new Date();
+    lastSyncTime = now;
     document.getElementById('lastSaved').textContent = 
-        `Last saved: ${new Date().toLocaleTimeString()}`;
+        `Last saved: ${now.toLocaleTimeString()}`;
 }
 
-// File-based data management
-function loadSettings() {
-    try {
-        // In a real file-based system, this would read from a file
-        // For this demo, we'll still use localStorage but with improved error handling
-        const savedSettings = localStorage.getItem('trackingSettings');
-        if (savedSettings) {
-            settings = { ...settings, ...JSON.parse(savedSettings) };
-            updateStatus('Settings loaded successfully');
-        }
-    } catch (error) {
-        console.error('Error loading settings:', error);
-        updateStatus('Error loading settings. Using defaults.', true);
+function updateSyncStatus(status) {
+    const syncStatus = document.getElementById('syncStatus');
+    if (syncStatus) {
+        syncStatus.textContent = status;
     }
-    
-    assignUserColors();
-    document.getElementById('weekStartDay').value = settings.weekStartDay;
 }
 
+// Firebase data management
+function loadDataFromFirebase() {
+    updateStatus('Loading data from Firebase...');
+    
+    return database.ref('/').once('value')
+        .then((snapshot) => {
+            const data = snapshot.val() || {};
+            
+            if (data.settings) {
+                settings = data.settings;
+                assignUserColors();
+            }
+            
+            if (data.references) {
+                references = data.references;
+            }
+            
+            updateStatus('Data loaded from Firebase successfully');
+            displayWeek();
+            displayUsers();
+            updateLegend();
+            updateLastSaved();
+            
+            return true;
+        })
+        .catch((error) => {
+            console.error('Error loading from Firebase:', error);
+            updateStatus('Error loading from Firebase. Using local data.', true);
+            loadLocalData(); // Fall back to local storage
+            return false;
+        });
+}
+
+function saveDataToFirebase() {
+    updateStatus('Saving data to Firebase...');
+    
+    const data = {
+        settings: settings,
+        references: references,
+        lastUpdated: new Date().toISOString()
+    };
+    
+    return database.ref('/').set(data)
+        .then(() => {
+            updateStatus('Data saved to Firebase successfully');
+            updateLastSaved();
+            return true;
+        })
+        .catch((error) => {
+            console.error('Error saving to Firebase:', error);
+            updateStatus('Error saving to Firebase. Saved locally only.', true);
+            saveLocalData(); // Fall back to local storage
+            return false;
+        });
+}
+
+function setupFirebaseSync() {
+    // Initial load
+    loadDataFromFirebase().then(() => {
+        isInitialLoad = false;
+        
+        // Listen for changes
+        database.ref('/').on('value', (snapshot) => {
+            if (isInitialLoad) return;
+            
+            const data = snapshot.val() || {};
+            const lastUpdate = data.lastUpdated ? new Date(data.lastUpdated) : null;
+            
+            // Only update if the data is different and not our own update
+            if (lastUpdate && (!lastSyncTime || lastUpdate > lastSyncTime)) {
+                if (data.settings) {
+                    settings = data.settings;
+                    assignUserColors();
+                }
+                
+                if (data.references) {
+                    references = data.references;
+                }
+                
+                updateStatus('Data updated from Firebase');
+                updateSyncStatus('⚡ Synced');
+                displayWeek();
+                displayUsers();
+                updateLegend();
+                
+                // Update last sync time
+                lastSyncTime = new Date();
+            }
+        });
+    });
+}
+
+// Local storage as fallback
+function loadLocalData() {
+    try {
+        const savedSettings = localStorage.getItem('trackingSettings');
+        const savedReferences = localStorage.getItem('trackingReferences');
+        
+        if (savedSettings) {
+            settings = JSON.parse(savedSettings);
+        }
+        
+        if (savedReferences) {
+            references = JSON.parse(savedReferences);
+        }
+        
+        assignUserColors();
+        document.getElementById('weekStartDay').value = settings.weekStartDay;
+        updateStatus('Data loaded from local storage');
+    } catch (error) {
+        console.error('Error loading local data:', error);
+        updateStatus('Error loading local data', true);
+    }
+}
+
+function saveLocalData() {
+    try {
+        localStorage.setItem('trackingSettings', JSON.stringify(settings));
+        localStorage.setItem('trackingReferences', JSON.stringify(references));
+        updateLastSaved();
+    } catch (error) {
+        console.error('Error saving local data:', error);
+        updateStatus('Error saving local data', true);
+    }
+}
+
+// Main data operations
 function saveSettings() {
     try {
         settings.weekStartDay = parseInt(document.getElementById('weekStartDay').value);
-        
-        // In a real file-based system, this would write to a file
-        // For this demo, we'll still use localStorage but with improved error handling
-        localStorage.setItem('trackingSettings', JSON.stringify(settings));
-        
-        updateStatus('Settings saved successfully');
-        updateLastSaved();
+        saveDataToFirebase();
         displayWeek();
     } catch (error) {
         console.error('Error saving settings:', error);
@@ -93,69 +214,10 @@ function saveSettings() {
     }
 }
 
-function loadData() {
-    try {
-        // In a real file-based system, this would read from a file
-        // For this demo, we'll still use localStorage but with improved error handling
-        const savedData = localStorage.getItem('trackingReferences');
-        if (savedData) {
-            references = JSON.parse(savedData);
-            updateStatus('Reference data loaded successfully');
-        }
-    } catch (error) {
-        console.error('Error loading data:', error);
-        updateStatus('Error loading reference data', true);
-    }
-}
-
 function saveData() {
-    try {
-        // In a real file-based system, this would write to a file
-        // For this demo, we'll still use localStorage but with improved error handling
-        localStorage.setItem('trackingReferences', JSON.stringify(references));
-        
-        updateStatus('Data saved successfully');
-        updateLastSaved();
-        
-        // Create auto-backup every 10 saves (in a real system)
-        const saveCount = parseInt(localStorage.getItem('saveCount') || '0') + 1;
-        localStorage.setItem('saveCount', saveCount.toString());
-        
-        if (saveCount % 10 === 0) {
-            createAutoBackup();
-        }
-    } catch (error) {
-        console.error('Error saving data:', error);
-        updateStatus('Error saving data', true);
-    }
-}
-
-function createAutoBackup() {
-    try {
-        const backupData = {
-            settings: settings,
-            references: references,
-            backupDate: new Date().toISOString()
-        };
-        
-        // In a real file-based system, this would create a backup file
-        // For this demo, we'll use localStorage
-        localStorage.setItem(`backup_${new Date().toISOString().split('T')[0]}`, 
-                            JSON.stringify(backupData));
-        
-        updateStatus('Auto-backup created successfully');
-    } catch (error) {
-        console.error('Error creating backup:', error);
-        updateStatus('Error creating auto-backup', true);
-    }
-}
-
-function setupAutoSave() {
-    // Auto-save every 5 minutes
-    setInterval(function() {
-        saveData();
-        updateStatus('Auto-saved data');
-    }, 5 * 60 * 1000);
+    saveDataToFirebase().catch(() => {
+        saveLocalData(); // Fallback
+    });
 }
 
 function assignUserColors() {
@@ -165,6 +227,9 @@ function assignUserColors() {
         }
     });
 }
+
+// The rest of your functions remain mostly the same
+// Just replace any calls to the old saveData() with the new one
 
 function toggleSettings() {
     const panel = document.getElementById('settingsPanel');
@@ -202,12 +267,14 @@ function removeUser(user) {
         
         // Update all references assigned to this user
         Object.keys(references).forEach(dateKey => {
-            references[dateKey].forEach(ref => {
-                if (ref.user === user) {
-                    ref.user = 'AVAILABLE';
-                    ref.lastUpdated = new Date().toLocaleString();
-                }
-            });
+            if (references[dateKey]) {
+                references[dateKey].forEach(ref => {
+                    if (ref.user === user) {
+                        ref.user = 'AVAILABLE';
+                        ref.lastUpdated = new Date().toLocaleString();
+                    }
+                });
+            }
         });
         
         saveSettings();
@@ -433,7 +500,6 @@ function addReference(dateKey) {
     
     references[dateKey].push(newReference);
     saveData();
-    displayWeek();
     
     // Clear inputs
     b1Input.value = '';
@@ -443,14 +509,14 @@ function addReference(dateKey) {
 }
 
 function updateUser(dateKey, refId, newUser) {
-    const dayReferences = references[dateKey] || [];
-    const refIndex = dayReferences.findIndex(ref => ref.id === refId);
+    if (!references[dateKey]) return;
+    
+    const refIndex = references[dateKey].findIndex(ref => ref.id === refId);
     
     if (refIndex !== -1) {
         references[dateKey][refIndex].user = newUser;
         references[dateKey][refIndex].lastUpdated = new Date().toLocaleString();
         saveData();
-        displayWeek();
         
         const ref = references[dateKey][refIndex];
         updateStatus(`Reference ${ref.b1} updated to ${newUser}`);
@@ -459,12 +525,12 @@ function updateUser(dateKey, refId, newUser) {
 
 function deleteReference(dateKey, refId) {
     if (confirm('Are you sure you want to delete this reference?')) {
-        const dayReferences = references[dateKey] || [];
-        const refToDelete = dayReferences.find(ref => ref.id === refId);
+        if (!references[dateKey]) return;
         
-        references[dateKey] = dayReferences.filter(ref => ref.id !== refId);
+        const refToDelete = references[dateKey].find(ref => ref.id === refId);
+        references[dateKey] = references[dateKey].filter(ref => ref.id !== refId);
+        
         saveData();
-        displayWeek();
         
         if (refToDelete) {
             updateStatus(`Reference ${refToDelete.b1} deleted successfully`);
@@ -514,9 +580,6 @@ function handleImport(event) {
                 
                 saveSettings();
                 saveData();
-                displayUsers();
-                updateLegend();
-                displayWeek();
                 
                 updateStatus('Data imported successfully!');
             }
@@ -532,128 +595,12 @@ function clearAllData() {
     if (confirm('Are you sure you want to clear ALL data? This cannot be undone!')) {
         if (confirm('This will delete everything. Are you absolutely sure?')) {
             // Create a backup before clearing
-            const backupData = {
-                settings: settings,
-                references: references,
-                backupDate: new Date().toISOString()
-            };
-            
-            try {
-                localStorage.setItem(`backup_before_clear_${new Date().toISOString().split('T')[0]}`, 
-                                   JSON.stringify(backupData));
-            } catch (error) {
-                console.error('Error creating backup before clear:', error);
-            }
+            exportData();
             
             references = {};
             saveData();
-            displayWeek();
             updateStatus('All data has been cleared.');
         }
-    }
-}
-
-// File System API implementation (for modern browsers)
-// Note: This will only work in secure contexts (HTTPS or localhost)
-async function saveToFile() {
-    try {
-        const exportData = {
-            settings: settings,
-            references: references,
-            exportDate: new Date().toISOString()
-        };
-        
-        const dataStr = JSON.stringify(exportData, null, 2);
-        
-        // Check if File System Access API is available
-        if ('showSaveFilePicker' in window) {
-            try {
-                const handle = await window.showSaveFilePicker({
-                    suggestedName: DATA_FILE_NAME,
-                    types: [{
-                        description: 'JSON File',
-                        accept: {'application/json': ['.json']},
-                    }],
-                });
-                
-                const writable = await handle.createWritable();
-                await writable.write(dataStr);
-                await writable.close();
-                
-                updateStatus('Data saved to file successfully');
-                return true;
-            } catch (err) {
-                console.error('Error saving to file:', err);
-                // Fall back to localStorage if user cancels or there's an error
-                localStorage.setItem('trackingReferences', JSON.stringify(references));
-                localStorage.setItem('trackingSettings', JSON.stringify(settings));
-                updateStatus('Data saved to browser storage (file access failed)');
-                return false;
-            }
-        } else {
-            // Fall back to localStorage if File System API is not available
-            localStorage.setItem('trackingReferences', JSON.stringify(references));
-            localStorage.setItem('trackingSettings', JSON.stringify(settings));
-            updateStatus('Data saved to browser storage (file system API not available)');
-            return false;
-        }
-    } catch (error) {
-        console.error('Error in saveToFile:', error);
-        updateStatus('Error saving data to file', true);
-        return false;
-    }
-}
-
-async function loadFromFile() {
-    try {
-        // Check if File System Access API is available
-        if ('showOpenFilePicker' in window) {
-            try {
-                const [fileHandle] = await window.showOpenFilePicker({
-                    types: [{
-                        description: 'JSON Files',
-                        accept: {'application/json': ['.json']},
-                    }],
-                    multiple: false,
-                });
-                
-                const file = await fileHandle.getFile();
-                const contents = await file.text();
-                
-                const data = JSON.parse(contents);
-                
-                if (data.settings) {
-                    settings = data.settings;
-                    assignUserColors();
-                }
-                
-                if (data.references) {
-                    references = data.references;
-                }
-                
-                displayUsers();
-                updateLegend();
-                displayWeek();
-                
-                updateStatus('Data loaded from file successfully');
-                return true;
-            } catch (err) {
-                console.error('Error loading from file:', err);
-                // Fall back to localStorage if user cancels or there's an error
-                loadData();
-                updateStatus('Data loaded from browser storage (file access failed)');
-                return false;
-            }
-        } else {
-            // Fall back to localStorage if File System API is not available
-            loadData();
-            updateStatus('Data loaded from browser storage (file system API not available)');
-            return false;
-        }
-    } catch (error) {
-        console.error('Error in loadFromFile:', error);
-        updateStatus('Error loading data from file', true);
-        return false;
     }
 }
 
@@ -710,32 +657,3 @@ function addWeekStatsButton() {
     statsButton.onclick = countWeekReferences;
     dateNavigation.appendChild(statsButton);
 }
-
-// Check for unsaved changes before leaving the page
-window.addEventListener('beforeunload', function(e) {
-    // Save data before leaving
-    try {
-        localStorage.setItem('trackingReferences', JSON.stringify(references));
-        localStorage.setItem('trackingSettings', JSON.stringify(settings));
-    } catch (error) {
-        console.error('Error saving data before unload:', error);
-    }
-});
-
-// Auto-refresh data from storage every 30 seconds
-// This is useful when multiple browser windows are open
-setInterval(function() {
-    try {
-        const savedData = localStorage.getItem('trackingReferences');
-        if (savedData) {
-            const newReferences = JSON.parse(savedData);
-            if (JSON.stringify(newReferences) !== JSON.stringify(references)) {
-                references = newReferences;
-                displayWeek();
-                updateStatus('Data refreshed from storage');
-            }
-        }
-    } catch (error) {
-        console.error('Error refreshing data:', error);
-    }
-}, 30000);
